@@ -1,5 +1,10 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 	<url>
+		<loc>http://blog.notmmao.com/posts/calc-area-of-the-shadow-by-c.html</loc>
+		<lastmod>2015-08-01</lastmod>
+		<changefreq>monthly</changefreq>
+	</url>
+	<url>
 		<loc>http://blog.notmmao.com/posts/about.html</loc>
 		<lastmod>2015-07-20</lastmod>
 		<changefreq>monthly</changefreq>

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Type" content="text/html;charset=utf-8">
+  <title>
+求阴影部分的面积,借助计算机使用积分思想解小学题 |
+notmmao</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <link rel="stylesheet" href="/static/css/pygments.css" />
+  <link rel="alternate" type="application/rss+xml" title="RSS" href="/rss.xml" />
+  <link rel="icon" type="image/png" href="/static/img/favicon.png">
+</head>
+<body>
+    <div class="page-wrap">
+        <section class="main-header regular">
+            <div class="vertical-container">
+                <div class="wrapper clearfix">
+                    <header>
+                        <a href="/">
+                            <h1 id="main-title">notmmao</h1>
+                            <h2 id="main-subtitle">notmmao 的个人博客</h2>
+                        </a>
+                    </header>
+                    <nav id="main-nav" role="navigation">
+                        <a href="/" class="selected">主页</a>
+                        <a href="/posts/about.html" class="">关于</a>
+                        <a href="https://github.com/notmmao">Github</a>
+                    </nav>
+                </div>
+            </div>
+        </section>
+        <section class="main-content">
+            
+<article class="main-content">
+    <div class="wrapper">
+        <header class="section-header">
+            <h1 class="section-title">求阴影部分的面积,借助计算机使用积分思想解小学题</h1>
+            <span class="section-subtitle"><time datetime="2015-08-01" pubdate="">2015-08-01</time></span>
+        </header>
+        <section class="post-content">
+        	<p>最近看到一道题:求阴影部分的面积
+据说是小学6年级的数学题,难倒了很多成年人,包括我在内.</p>
+<p>下面是这道题的截图</p>
+<p><img alt="问题原图" src="/static/img/area-of-the-shadow-1.jpg" />  </p>
+<p>咋一看很简单,以矩形上边为界,分为上下部分.</p>
+<p>下边是小圆面积的四分之一;
+上边部分需要做一个从圆心到矩形上边与大圆连接点的辅助线,之后就能直观看出是扇形减去三角形的差.</p>
+<p>如图</p>
+<p><img alt="加过辅助线的图" src="/static/img/area-of-the-shadow-2.jpg" />  </p>
+<p>三角形斜边为大圆半径8,一个直角边等于小圆半径4.通过cos可以求出这个三角形与扇形公用的夹角为60°.
+那么扇形面积就是大圆面积的1/6. </p>
+<p>再根据勾股定理可以算出三角形另外一个直角边的长度,因此也可以得到三角形的面积.</p>
+<p>接下来就是一些数学计算了.</p>
+<div class="codehilite"><pre><span class="cp">#define PI_2 3.14</span>
+<span class="kt">float</span> <span class="n">s_po</span> <span class="o">=</span> <span class="p">(</span><span class="mi">8</span><span class="o">*</span><span class="mi">8</span><span class="o">*</span><span class="n">PI_2</span><span class="o">/</span><span class="mi">6</span> <span class="o">-</span> <span class="n">sqrt</span><span class="p">(</span><span class="mi">8</span><span class="o">*</span><span class="mi">8</span><span class="o">-</span><span class="mi">4</span><span class="o">*</span><span class="mi">4</span><span class="p">)</span><span class="o">*</span><span class="mi">4</span><span class="o">/</span><span class="mi">2</span><span class="p">)</span> <span class="o">+</span> <span class="mi">4</span><span class="o">*</span><span class="mi">4</span><span class="o">*</span><span class="n">PI_2</span><span class="o">/</span><span class="mi">4</span><span class="p">;</span>
+</pre></div>
+
+
+<p><strong>使用积分思维</strong></p>
+<p>初见这道题时,我开过这样一个玩笑:
+把这张图放大且显示在一个大屏幕上.然后拿着放大镜数每一行阴影部分的像素点.
+最后累加起来得到这部分的面积.显示器分辨率越高,得到的结果就越准确.</p>
+<p>有一点积分的感觉了.
+把屏幕每一像素行看做一个高度为单位1的横线,那么上面拿着放大镜数像素的行为可以抽象成求行宽.
+大圆半径为8,这个单位太大.
+把它再分成一万份后,这样求出上面4万行横线的长度,累加起来再除以1亿就能得到阴影部分的面积了.</p>
+<p>参考代码:</p>
+<div class="codehilite"><pre><span class="c1">// 2015-07-10 </span>
+<span class="c1">// 一道数学题</span>
+<span class="c1">// gcc sq.c</span>
+<span class="c1">// output : 3222063137.119731,s_po=32.220286,s_po1=32.213333</span>
+<span class="cp">#include &lt;math.h&gt;</span>
+<span class="cp">#include &lt;stdio.h&gt;</span>
+
+<span class="cp">#define R1 80000</span>
+<span class="cp">#define R2 40000</span>
+<span class="cp">#define PI_2 3.14159265358979323846</span>
+<span class="cp">#define PI_21 3.14</span>
+
+<span class="kt">double</span> <span class="nf">fun</span><span class="p">(</span><span class="kt">double</span> <span class="n">r</span><span class="p">,</span> <span class="kt">double</span> <span class="n">h</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kt">double</span> <span class="n">s</span> <span class="o">=</span> <span class="n">sqrt</span><span class="p">(</span><span class="n">r</span> <span class="o">*</span> <span class="n">r</span> <span class="o">-</span> <span class="n">h</span> <span class="o">*</span> <span class="n">h</span><span class="p">);</span>
+    <span class="k">return</span> <span class="n">s</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="kt">int</span> <span class="nf">main</span><span class="p">(</span><span class="kt">int</span> <span class="n">argc</span><span class="p">,</span> <span class="kt">char</span><span class="o">*</span> <span class="n">argv</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kt">double</span> <span class="n">s</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="kt">double</span> <span class="n">s2</span> <span class="o">=</span> <span class="n">R2</span><span class="o">*</span><span class="n">R2</span><span class="o">*</span><span class="n">PI_2</span> <span class="o">*</span> <span class="mf">0.25</span><span class="p">;</span>
+    <span class="kt">double</span> <span class="n">s1</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+
+    <span class="kt">double</span> <span class="n">s_po</span> <span class="o">=</span> <span class="p">(</span><span class="mi">8</span><span class="o">*</span><span class="mi">8</span><span class="o">*</span><span class="n">PI_2</span><span class="o">/</span><span class="mi">6</span> <span class="o">-</span> <span class="n">sqrt</span><span class="p">(</span><span class="mi">8</span><span class="o">*</span><span class="mi">8</span><span class="o">-</span><span class="mi">4</span><span class="o">*</span><span class="mi">4</span><span class="p">)</span><span class="o">*</span><span class="mi">4</span><span class="o">/</span><span class="mi">2</span><span class="p">)</span> <span class="o">+</span> <span class="mi">4</span><span class="o">*</span><span class="mi">4</span><span class="o">*</span><span class="n">PI_2</span><span class="o">/</span><span class="mi">4</span><span class="p">;</span>
+    <span class="kt">double</span> <span class="n">s_po1</span> <span class="o">=</span> <span class="mi">64</span><span class="o">*</span><span class="n">PI_21</span><span class="o">/</span><span class="mf">6.0</span> <span class="o">-</span> <span class="mi">8</span><span class="o">*</span><span class="mf">1.73</span> <span class="o">+</span> <span class="mi">4</span><span class="o">*</span><span class="n">PI_21</span><span class="p">;</span>
+
+    <span class="kt">int</span> <span class="n">i</span><span class="p">;</span>
+    <span class="k">for</span><span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="n">R1</span><span class="o">/</span><span class="mi">2</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">R1</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">s1</span> <span class="o">+=</span> <span class="n">fun</span><span class="p">(</span><span class="n">R1</span><span class="p">,</span> <span class="n">i</span><span class="p">);</span>
+    <span class="p">}</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">s2</span><span class="o">+</span><span class="n">s1</span><span class="p">;</span>
+    <span class="n">printf</span><span class="p">(</span><span class="s">&quot;s=%f,s_po=%f,s_po1=%f&quot;</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="n">s_po</span><span class="p">,</span> <span class="n">s_po1</span><span class="p">);</span>
+    <span class="k">return</span> <span class="n">s</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+
+
+<p>其中s是用"积分"思想算出的结果(未除以亿),s_po与s_po1是常规方法得到的结果.</p>
+<p>计算结果还是很接近的.</p>
+        </section>
+        <div class="post-nav">
+    		<!-- Duoshuo Comment BEGIN -->
+<div class="ds-thread" data-thread-key="706f7374732f63616c632d617265612d6f662d7468652d736861646f772d62792d632e68746d6c" data-title="求阴影部分的面积,借助计算机使用积分思想解小学题" data-url="posts/calc-area-of-the-shadow-by-c.html"></div>
+<script type="text/javascript">
+	var duoshuoQuery = {short_name:"notmmao"};
+	(function() {
+		var ds = document.createElement('script');
+		ds.type = 'text/javascript';ds.async = true;
+		ds.src = 'http://static.duoshuo.com/embed.js';
+		ds.charset = 'UTF-8';
+		(document.getElementsByTagName('head')[0]
+		|| document.getElementsByTagName('body')[0]).appendChild(ds);
+	})();
+</script>
+
+    	</div>
+    </div>
+
+</article>
+
+        </section>
+    </div>
+    <footer class="main-footer">
+        <div class="vertical-container">
+            <div class="wrapper">
+                <p class="copy">&copy; notmmao</p>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>
