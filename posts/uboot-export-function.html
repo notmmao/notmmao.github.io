@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Type" content="text/html;charset=utf-8">
+  <title>
+uboot导出函数给'裸机'程序用 |
+notmmao</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <link rel="stylesheet" href="/static/css/pygments.css" />
+  <link rel="alternate" type="application/rss+xml" title="RSS" href="/rss.xml" />
+  <link rel="icon" type="image/png" href="/static/img/favicon.png">
+</head>
+<body>
+    <div class="page-wrap">
+        <section class="main-header regular">
+            <div class="vertical-container">
+                <div class="wrapper clearfix">
+                    <header>
+                        <a href="/">
+                            <h1 id="main-title">notmmao</h1>
+                            <h2 id="main-subtitle">notmmao 的个人博客</h2>
+                        </a>
+                    </header>
+                    <nav id="main-nav" role="navigation">
+                        <a href="/" class="selected">主页</a>
+                        <a href="/posts/about.html" class="">关于</a>
+                        <a href="https://github.com/notmmao">Github</a>
+                    </nav>
+                </div>
+            </div>
+        </section>
+        <section class="main-content">
+            
+<article class="main-content">
+    <div class="wrapper">
+        <header class="section-header">
+            <h1 class="section-title">uboot导出函数给'裸机'程序用</h1>
+            <span class="section-subtitle"><time datetime="2016-01-19" pubdate="">2016-01-19</time></span>
+        </header>
+        <section class="post-content">
+        	<p>从uboot下手学习arm启动过程是个很好的路径. 我已经uboot codebase中漫游好几天了.
+也做了一些'裸机'程序学习 arm 汇编,下面总结下在引入C语言函数相关知识点.</p>
+<h2 id="uboot">通过绝对内存地址引入uboot函数</h2>
+<p>最开始,想在自己程序中使用printf函数,首先在uboot.map中找到其地址 0x12341234 .
+然后声明一个void (<em>my_printf)(char</em> fmt,...) = 0x12341234;
+这样在自己的程序中使用my_printf函数就可以格式化信息并输出到uboot环境的stdio了.</p>
+<p>但是这样有个问题,如果uboot代码发生变化导致printf连接地址变化,则代码中应编码的地址也要跟着变化.
+如果能动态获取printf函数的地址,自己的程序就变得[稍微]portable.</p>
+<h2 id="uboot_1">uboot导出函数给'裸机'程序</h2>
+<p>doc/README.standalone中给出了uboot导出函数给'裸机'程序[Standalone Applications]的原理与方法.</p>
+<ol>
+<li>uboot通过一个jump table实现导出函数.</li>
+<li>可以通过global_data获取到jump table 指针</li>
+<li>各个平台有不同方式获取global_data, arm 平台是通过r8寄存器获取其地址.</li>
+<li>通常standalone程序要在调用打出函数前调用app_startup.</li>
+<li>如果要新增导出函数<ul>
+<li>在 include/_exports.h 中 EXPORT_FUNC(foobar)</li>
+<li>在 include/exports.h 中定义foobar的C原型 void foobar(void);</li>
+<li>在 common/exports.c/jumptable_init() 中加入 gd-&gt;jt[XF_foobar] = foobar;</li>
+<li>在 include/exports.h 中递增 XF_VERSION 的值,用于ABI兼用性.</li>
+</ul>
+</li>
+<li>在 standalone 程序中引入common.h和exports.h,就可以使用导出函数了.</li>
+</ol>
+<h2 id="uboot_2">'裸机'程序如何连接uboot导出函数给</h2>
+<p>要想了解链接细节,stubs.c是关键.
+make standalone程序时,必须链接 stubs.c, 通过cpp展开宏后得到:</p>
+<div class="codehilite"><pre><span class="cp"># 2 &quot;stubs.c&quot; 2</span>
+<span class="cp"># 168 &quot;stubs.c&quot;</span>
+<span class="kt">void</span> <span class="nf">__attribute__</span><span class="p">((</span><span class="n">unused</span><span class="p">))</span> <span class="n">dummy</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="cp"># 1 &quot;/mnt/E/tiny6410/source/u-boot-mini6410/include</span><span class="cpf">/_exports.h&quot; 1</span><span class="cp"></span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;get_version&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;get_version&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_get_version</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;getc&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;getc&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot; ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_getc</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;tstc&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;tstc&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot; ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_tstc</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;putc&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;putc&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot; ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_putc</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;puts&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;puts&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot; ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_puts</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;printf&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;printf&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot; ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_printf</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;install_hdlr&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;install_hdlr&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot; ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_install_hdlr</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;free_hdlr&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;free_hdlr&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_free_hdlr</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;malloc&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;malloc&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot; ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_malloc</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;free&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;free&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot; ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_free</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;udelay&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;udelay&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot; ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_udelay</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;get_timer&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;get_timer&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_get_timer</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;vprintf&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;vprintf&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_vprintf</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;do_reset&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;do_reset&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot; ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_do_reset</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;getenv&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;getenv&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot; ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_getenv</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;setenv&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;setenv&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot; ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_setenv</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span> <span class="s">&quot;    .globl &quot;</span> <span class="s">&quot;simple_strtoul&quot;</span> <span class="s">&quot;</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;simple_strtoul&quot;</span> <span class="s">&quot;:</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot; ldr ip, [r8, %0]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="s">&quot;   ldr pc, [ip, %1]</span><span class="se">\n</span><span class="s">&quot;</span> <span class="o">:</span> <span class="o">:</span> <span class="s">&quot;i&quot;</span><span class="p">(((</span><span class="kt">size_t</span><span class="p">)</span> <span class="o">&amp;</span><span class="p">((</span><span class="n">gd_t</span> <span class="o">*</span><span class="p">)</span><span class="mi">0</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">jt</span><span class="p">)),</span> <span class="s">&quot;i&quot;</span><span class="p">(</span><span class="n">XF_simple_strtoul</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span> <span class="o">:</span> <span class="s">&quot;ip&quot;</span><span class="p">);</span>
+<span class="cp"># 171 &quot;stubs.c&quot; 2</span>
+<span class="p">}</span>
+</pre></div>
+
+
+<p>dummy函数把export.h中声明的函数都定义为globl符号,并根据XF_[Function_name]算出偏移载入pc寄存器.</p>
+<p>拿printf举例:</p>
+<div class="codehilite"><pre>    <span class="na">.globl</span> <span class="no">printf</span>
+<span class="nl">printf:</span> 
+    <span class="nf">ldr</span> <span class="no">ip</span><span class="p">,</span> <span class="p">[</span><span class="no">r8</span><span class="p">,</span> <span class="err">%</span><span class="mi">0</span><span class="p">]</span> 
+    <span class="no">ldr</span> <span class="no">pc</span><span class="p">,</span> <span class="p">[</span><span class="no">ip</span><span class="p">,</span> <span class="err">%</span><span class="mi">1</span><span class="p">]</span>
+    <span class="err">:</span> <span class="err">:</span> <span class="err">&quot;</span><span class="nf">i</span><span class="err">&quot;</span><span class="p">(((</span><span class="no">size_t</span><span class="p">)</span> <span class="err">&amp;</span><span class="p">((</span><span class="no">gd_t</span> <span class="p">*)</span><span class="mi">0</span><span class="p">)-</span><span class="err">&gt;</span><span class="no">jt</span><span class="p">)),</span> <span class="err">&quot;</span><span class="no">i</span><span class="err">&quot;</span><span class="p">(</span><span class="no">XF_printf</span> <span class="p">*</span> <span class="no">sizeof</span><span class="p">(</span><span class="no">void</span> <span class="p">*))</span> <span class="p">:</span> <span class="err">&quot;</span><span class="no">ip</span><span class="err">&quot;</span>
+</pre></div>
+
+
+<p>首先声明printf符号,然后根据XF_printf枚举值找到该函数在jt表中的索引,最后赋值给pc寄存器.
+这样就等于直接调用了uboot中的同名函数.</p>
+<hr />
+<h2 id="cppstubsc">补充:使用cpp展开stubs.c中的宏</h2>
+<div class="codehilite"><pre><span class="nf">all</span><span class="o">:</span>    <span class="k">$(</span><span class="nv">obj</span><span class="k">)</span>.<span class="n">depend</span> <span class="k">$(</span><span class="nv">OBJS</span><span class="k">)</span> <span class="k">$(</span><span class="nv">LIB</span><span class="k">)</span> <span class="k">$(</span><span class="nv">SREC</span><span class="k">)</span> <span class="k">$(</span><span class="nv">BIN</span><span class="k">)</span> <span class="k">$(</span><span class="nv">ELF</span><span class="k">)</span> <span class="n">stubs</span>.<span class="n">i</span>
+<span class="err">...</span>
+<span class="k">$(</span><span class="nv">CPP</span><span class="k">)</span> <span class="err">-o</span> <span class="k">$@</span> <span class="err">$^</span> <span class="k">$(</span><span class="nv">CPPFLAGS</span><span class="k">)</span>
+</pre></div>
+        </section>
+        <div class="post-nav">
+    		<!-- Duoshuo Comment BEGIN -->
+<div class="ds-thread" data-thread-key="706f7374732f75626f6f742d6578706f72742d66756e6374696f6e2e68746d6c" data-title="uboot导出函数给'裸机'程序用" data-url="posts/uboot-export-function.html"></div>
+<script type="text/javascript">
+	var duoshuoQuery = {short_name:"notmmao"};
+	(function() {
+		var ds = document.createElement('script');
+		ds.type = 'text/javascript';ds.async = true;
+		ds.src = 'http://static.duoshuo.com/embed.js';
+		ds.charset = 'UTF-8';
+		(document.getElementsByTagName('head')[0]
+		|| document.getElementsByTagName('body')[0]).appendChild(ds);
+	})();
+</script>
+
+    	</div>
+    </div>
+
+</article>
+
+        </section>
+    </div>
+    <footer class="main-footer">
+        <div class="vertical-container">
+            <div class="wrapper">
+                <p class="copy">&copy; notmmao</p>
+            </div>
+        </div>
+    </footer>
+	<script>
+	var _hmt = _hmt || [];
+	(function() {
+	  var hm = document.createElement("script");
+	  hm.src = "//hm.baidu.com/hm.js?60311d00f4a105318467732bf195a8a1";
+	  var s = document.getElementsByTagName("script")[0]; 
+	  s.parentNode.insertBefore(hm, s);
+	})();
+	</script>
+</body>
+</html>
